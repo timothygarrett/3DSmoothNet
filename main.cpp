@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
         evaluation_points = ep_temp;
         ep_temp.clear();
     }
-    else if (interest_points_file.substr(interest_points_file.length() - 5, 4).compare(".pcd") == 0) {
+    else if (interest_points_file.substr(interest_points_file.length() - 4, 4).compare(".pcd") == 0) {
         if (pcl::io::loadPCDFile(interest_points_file, *interest_points) == -1) {
             std::cerr << "Interest points could not be loaded" << std::endl;
             return -1;
