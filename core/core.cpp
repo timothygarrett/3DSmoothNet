@@ -338,6 +338,87 @@ void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
     }
 }
 
+// Compute the lrf accordin to the method from toldi paper, for the points selected with the indices
+void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+                     pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints,
+                     float sup_radius,
+                     float smoothingFactor,
+                     std::vector<LRF> &cloud_LRF,
+                     std::vector<std::vector <int>>& neighbors,
+                     std::vector<std::vector <int>>& neighbors_smoothing_idx,
+                     std::vector<std::vector <float>>& neighbors_smoothing_distance)
+{
+    int i, j, m;
+    // Initialize all the variables
+    pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+    std::vector<int> point_idx;
+    std::vector<float> point_dst;
+    kdtree.setInputCloud(cloud);
+    pcl::PointXYZ query_point;
+    pcl::PointXYZ test;
+    //LRF calculation
+    for (i = 0; i < keypoints->size(); i++)
+    {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr sphere_neighbor(new pcl::PointCloud<pcl::PointXYZ>);//local surface
+        pcl::PointCloud<pcl::PointXYZ>::Ptr sphere_neighbor_z(new pcl::PointCloud<pcl::PointXYZ>);//local surface for computing the z-axis of LRF
+        query_point = keypoints->at(i);
+
+        if (kdtree.radiusSearch(query_point, sup_radius, point_idx, point_dst) > 10)//only if there are more than 10 points in the local surface
+        {
+
+            for (j = 0; j < point_idx.size(); j++)
+            {
+
+                test.x = cloud->points[point_idx[j]].x - query_point.x;
+                test.y = cloud->points[point_idx[j]].y - query_point.y;
+                test.z = cloud->points[point_idx[j]].z - query_point.z;
+
+                sphere_neighbor_z->points.push_back(test);
+            }
+
+            // Save points for feature computation
+			// neighbors.at(indices[i]) = point_idx;
+			neighbors.at(i) = point_idx;
+
+            std::transform(point_dst.begin(), point_dst.end(), point_dst.begin(), std::ptr_fun<float, float>(std::sqrt));
+            // Find first element that has a distance bigger than the smoothing threshold
+            auto lower = std::lower_bound(point_dst.begin(), point_dst.end(), smoothingFactor);
+            // Index of the last element smaller then the threshold
+            int  index_last_element = lower - point_dst.begin();
+
+            // Copy neighbours to vector
+            std::vector<int> point_idx_smoothing(&point_idx[0], &point_idx[index_last_element]);
+            std::vector<float> point_distance_smoothing(&point_dst[0], &point_dst[index_last_element]);
+
+			// neighbors_smoothing_idx.at(indices[i]) = point_idx_smoothing;
+			// neighbors_smoothing_distance.at(indices[i]) = point_distance_smoothing;
+			neighbors_smoothing_idx.at(i) = point_idx_smoothing;
+			neighbors_smoothing_distance.at(i) = point_distance_smoothing;
+
+
+            for (j = 0; j < point_idx.size(); j++)
+            {
+                sphere_neighbor->points.push_back(cloud->points[point_idx[j]]);
+            }
+
+            Vertex x_axis, y_axis, z_axis;
+            toldiComputeZaxis(sphere_neighbor_z, z_axis, point_dst);
+            toldiComputeXaxis(sphere_neighbor, z_axis, sup_radius, point_dst, x_axis);
+            toldiComputeYaxis(x_axis, z_axis, y_axis);
+            // LRF temp = { indices[i],x_axis,y_axis,z_axis };
+			// cloud_LRF.at(indices[i]) = temp;
+            LRF temp = { i,x_axis,y_axis,z_axis };
+			cloud_LRF.at(i) = temp;
+        }
+        else
+        {
+            std::cout << "Less then ten points in the neighborhood!!!" << std::endl;
+            LRF temp = { NULL_POINTID,{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
+			// cloud_LRF.at(indices[i]) = temp;
+			cloud_LRF.at(i) = temp;
+        }
+    }
+}
 
 
 
@@ -456,6 +537,175 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
             flann::Matrix<float> data(new float[sphere_neighbors_transformed->size() * 3], sphere_neighbors_transformed->size(), 3);
 
 
+
+            for (int j = 0; j < sphere_neighbors_transformed->size(); j++)
+            {
+                data[j][0] = sphere_neighbors_transformed->points[j].x;
+                data[j][1] = sphere_neighbors_transformed->points[j].y;
+                data[j][2] = sphere_neighbors_transformed->points[j].z;
+            }
+
+            flann::SearchParams search_parameters = flann::SearchParams();
+            search_parameters.checks = -1;
+            search_parameters.sorted = false;
+            search_parameters.use_heap = flann::FLANN_True;
+
+
+            flann::KDTreeSingleIndexParams index_parameters = flann::KDTreeSingleIndexParams();
+            flann::KDTreeSingleIndex<flann::L2_3D<float> > index(data, index_parameters);
+            index.buildIndex();
+
+            // Square the smoothing factor as flann uses sqaured distances
+            float smoothing_factor_sqrd = 9 * smoothing_factor*smoothing_factor;
+            index.radiusSearch(voxel_coordinates, indices, dists, smoothing_factor_sqrd, search_parameters);
+
+            // Computes the normalization term and the variance
+            double normalization_term = 1 / (sqrt(2 * M_PI) * smoothing_factor);
+            double variance_term = -1 / (2 * (smoothing_factor * smoothing_factor));
+
+
+            for (int voxel_idx = 0; voxel_idx < counter_voxel - 1; voxel_idx++)
+            {
+                //cout << " thread: " << omp_get_thread_num() << endl;
+                // Extract all the distances
+                std::vector<float> point_distances = dists[voxel_idx];
+                if (!point_distances.empty())
+                {
+                    // Multiply with variance term
+                    std::transform(point_distances.begin(), point_distances.end(), point_distances.begin(),
+                                   std::bind1st(std::multiplies<float>(), variance_term));
+
+                    // Exponent
+                    std::transform(point_distances.begin(), point_distances.end(), point_distances.begin(), std::ptr_fun<float, float>(std::exp));
+
+                    // Normalization term
+                    std::transform(point_distances.begin(), point_distances.end(), point_distances.begin(),
+                                   std::bind1st(std::multiplies<float>(), normalization_term));
+
+                    // Sum the elements
+                    float sum_of_elems = std::accumulate(point_distances.begin(), point_distances.end(), 0.0f) / point_distances.size();
+
+                    // Sum up all the depths value to the voxel depth value
+                    descriptor[tid][voxel_idx] = sum_of_elems;
+
+                }
+                else
+                {
+                    // if no points in the neighborhood set the voxel depth to 0
+                    descriptor[tid][voxel_idx] = 0;
+                }
+
+            }
+
+            // Normalize the descriptor
+            float descriptor_sum = descriptor[tid].sum();
+            if (descriptor_sum != 0)
+                descriptor[tid] = descriptor[tid] / descriptor_sum;
+
+            for (int d = 0; d < descriptor[tid].size(); ++d)
+                DIMATCH_Descriptor[i][d] = descriptor[tid][d];
+
+        }
+        else
+        {
+            for (int voxel_idx = 0; voxel_idx < counter_voxel - 1; voxel_idx++)
+            {
+                descriptor[tid][voxel_idx] = 0;
+            }
+
+            for (int d = 0; d < descriptor[tid].size(); ++d)
+                DIMATCH_Descriptor[i][d] = descriptor[tid][d];
+
+        }
+    }
+
+    // Create the name with the radius, number of voxels and the smoothing factor
+    saving_path_file = saveFileName + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
+
+
+    // Write descriptor to CSV file
+    saveVector(saving_path_file, DIMATCH_Descriptor);
+}
+
+// estimate the SDV voxel grid for all interes points
+void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+                              pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints,
+                            //   std::vector<int> evaluation_points,
+                              std::vector<std::vector<int>> indices_neighbors,
+                              std::vector<LRF> cloud_LRF,
+                              float sup_radius,
+                              flann::Matrix<float> voxel_coordinates,
+                              int num_voxels,
+                              float smoothing_factor,
+                              std::string saveFileName)
+{
+    // Iterrate over all the points for which the descriptor is to be computed
+    pcl::PointXYZ queryPoint;
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    int counter_voxel = num_voxels * num_voxels * num_voxels;
+
+    // Create the filtering object
+    std::string saving_path_file;
+    int threads_ = omp_get_max_threads();
+    std::cout << "Starting SDV computation!" << std::endl;
+    std::cout << threads_ << " threads will be used!!" << std::endl;
+
+    // Initialize the space for the SDV values
+    // std::vector <std::vector <float>> DIMATCH_Descriptor(evaluation_points.size(), std::vector<float>(counter_voxel, 0));
+    std::vector <std::vector <float>> DIMATCH_Descriptor(keypoints->size(), std::vector<float>(counter_voxel, 0));
+
+    // Initialize the point to the descriptor for each thread used
+    Eigen::VectorXf *descriptor = new Eigen::VectorXf[threads_];
+
+
+    for (int i = 0; i < threads_; i++)
+    {
+        descriptor[i].setZero(counter_voxel);
+    }
+
+    int tid;
+
+    // Create path for saving
+    const char* path = "data";
+    boost::filesystem::path dir(path);
+    boost::filesystem::create_directory(dir);
+    int progress_counter = 0;
+
+    // #pragma omp parallel for shared(cloud,evaluation_points,indices_neighbors,counter_voxel,DIMATCH_Descriptor,progress_counter) private(tid,extract)  num_threads(threads_)
+    // for (int i = 0; i < evaluation_points.size(); i++)
+    #pragma omp parallel for shared(cloud,keypoints,indices_neighbors,counter_voxel,DIMATCH_Descriptor,progress_counter) private(tid,extract)  num_threads(threads_)
+    for (int i = 0; i < keypoints->size(); i++)
+    {
+
+        pcl::PointCloud<pcl::PointXYZ>::Ptr sphere_neighbors(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr sphere_neighbors_transformed(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+        std::vector<std::vector<size_t>> indices;
+        std::vector<std::vector<float>> dists;
+
+        tid = omp_get_thread_num();
+        descriptor[tid].setZero(counter_voxel);
+        // Save query points coordinates
+        // queryPoint = cloud->points[evaluation_points[i]];
+        queryPoint = keypoints->at(i);
+
+        // Extract neighbors from point cloud
+        extract.setInputCloud(cloud);
+        // inliers->indices = indices_neighbors[evaluation_points[i]];
+        inliers->indices = indices_neighbors[i];
+        extract.setIndices(inliers);
+        extract.setNegative(false);
+        extract.filter(*sphere_neighbors);
+
+
+        // Transform the neighbors to the local reference frame
+        if (sphere_neighbors->points.size() != 0)
+        {
+            // transformCloud(sphere_neighbors, cloud_LRF[evaluation_points[i]], sphere_neighbors_transformed);
+            transformCloud(sphere_neighbors, cloud_LRF[i], sphere_neighbors_transformed);
+
+            flann::Matrix<float> data(new float[sphere_neighbors_transformed->size() * 3], sphere_neighbors_transformed->size(), 3);
 
             for (int j = 0; j < sphere_neighbors_transformed->size(); j++)
             {

@@ -44,9 +44,15 @@ void toldiComputeXaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,Vertex z_axis,f
 void toldiComputeYaxis(Vertex x_axis,Vertex z_axis,Vertex &y_axis);
 void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<int> indices, float sup_radius, float smoothingFactor, std::vector<LRF>&Cloud_LRF, std::vector<std::vector <int>> &Neighbors, std::vector<std::vector <int>> &NeighborsSmoothingIDX, std::vector<std::vector <float>> &NeighborsSmoothingDistance);
 
+/**
+ * Compute the LRF with point cloud keypoints
+ */
+void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints, float sup_radius, float smoothingFactor, std::vector<LRF>&Cloud_LRF, std::vector<std::vector <int>> &Neighbors, std::vector<std::vector <int>> &NeighborsSmoothingIDX, std::vector<std::vector <float>> &NeighborsSmoothingDistance);
+
 //	SDV computation
 void transformCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,LRF pointLRF,pcl::PointCloud<pcl::PointXYZ>::Ptr &transformed_cloud);
 void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<int> indices, std::vector<std::vector<int>> indices_neighbors, std::vector<LRF> cloud_LRF, float sup_radius, flann::Matrix<float> voxel_coordinates, int num_voxels, float smoothingFactor, std::string saveFileName);
+void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints, std::vector<std::vector<int>> indices_neighbors, std::vector<LRF> cloud_LRF, float sup_radius, flann::Matrix<float> voxel_coordinates, int num_voxels, float smoothingFactor, std::string saveFileName);
 
 
 #endif

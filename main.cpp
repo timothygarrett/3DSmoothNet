@@ -10,6 +10,7 @@ Purpose: executes the computation of the SDV voxel grid for the selected interes
 
 #include <chrono>
 #include <pcl/io/ply_io.h>
+#include <pcl/io/pcd_io.h>
 #include "core/core.h"
 
 
@@ -77,12 +78,21 @@ int main(int argc, char *argv[])
     interest_points_file.erase(std::remove(interest_points_file.begin(), interest_points_file.end(), '\r'), interest_points_file.end());
 
     // If the keypoint file is not given initialize the ecaluation points with all the points in the point cloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr interest_points(new pcl::PointCloud<pcl::PointXYZ>);
+    bool has_pc_interest_points = false;
     if (!interest_points_file.compare(flag_all_points))
     {
         std::vector<int> ep_temp(cloud->width);
         std::iota(ep_temp.begin(), ep_temp.end(), 0);
         evaluation_points = ep_temp;
         ep_temp.clear();
+    }
+    else if (interest_points_file.substr(interest_points_file.length() - 5, 4).compare(".pcd") == 0) {
+        if (pcl::io::loadPCDFile(interest_points_file, *interest_points) == -1) {
+            std::cerr << "Interest points could not be loaded" << std::endl;
+            return -1;
+        }
+        has_pc_interest_points = true;
     }
     else
     {
@@ -99,7 +109,10 @@ int main(int argc, char *argv[])
         }
     }
 
-    std::cout << "Number of keypoints:" << evaluation_points.size() << "\n" << std::endl;
+    if (has_pc_interest_points)
+        std::cout << "Number of keypoints:" << interest_points->size() << "\n" << std::endl;
+    else
+        std::cout << "Number of keypoints:" << evaluation_points.size() << "\n" << std::endl;
 
 
     // Initialize the variables for the NN search and LRF computation
@@ -112,10 +125,19 @@ int main(int argc, char *argv[])
 
     // Compute the local reference frame for the interes points (code adopted from https://www.researchgate.net/publication/310815969_TOLDI_An_effective_and_robust_approach_for_3D_local_shape_description
     // and not optimized)
-
-    auto t1_lrf = std::chrono::high_resolution_clock::now();
-    toldiComputeLRF(cloud, evaluation_points, lrf_radius, 3 * smoothing_factor, cloud_lrf, nearest_neighbors, nearest_neighbors_smoothing, nearest_neighbors_smoothing_dist);
-    auto t2_lrf = std::chrono::high_resolution_clock::now();
+    std::__success_type<std::chrono::nanoseconds>::type lrf_span;
+    if (has_pc_interest_points) {
+        auto t1_lrf = std::chrono::high_resolution_clock::now();
+        toldiComputeLRF(cloud, interest_points, lrf_radius, 3 * smoothing_factor, cloud_lrf, nearest_neighbors, nearest_neighbors_smoothing, nearest_neighbors_smoothing_dist);
+        auto t2_lrf = std::chrono::high_resolution_clock::now();
+        lrf_span = t2_lrf - t1_lrf;
+    }
+    else {
+        auto t1_lrf = std::chrono::high_resolution_clock::now();
+        toldiComputeLRF(cloud, evaluation_points, lrf_radius, 3 * smoothing_factor, cloud_lrf, nearest_neighbors, nearest_neighbors_smoothing, nearest_neighbors_smoothing_dist);
+        auto t2_lrf = std::chrono::high_resolution_clock::now();
+        lrf_span = t2_lrf - t1_lrf;
+    }
 
     // Compute the SDV representation for all the points
 
@@ -127,15 +149,25 @@ int main(int argc, char *argv[])
     save_file_name = output_folder + save_file_name;
 
     // Start the actuall computation
-    auto t1 = std::chrono::high_resolution_clock::now();
-    computeLocalDepthFeature(cloud, evaluation_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_file_name);
-    auto t2 = std::chrono::high_resolution_clock::now();
+    std::__success_type<std::chrono::nanoseconds>::type sdv_span;
+    if (has_pc_interest_points) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        computeLocalDepthFeature(cloud, interest_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_file_name);
+        auto t2 = std::chrono::high_resolution_clock::now();
+        sdv_span = t2 - t1;
+    }
+    else {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        computeLocalDepthFeature(cloud, evaluation_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_file_name);
+        auto t2 = std::chrono::high_resolution_clock::now();
+        sdv_span = t2 - t1;
+    }
     std::cout << "\n---------------------------------------------------------" << std::endl;
     std::cout << "LRF computation took "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2_lrf - t1_lrf).count()
+              << std::chrono::duration_cast<std::chrono::milliseconds>(lrf_span).count()
               << " miliseconds\n";
     std::cout << "SDV computation took "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count()
+              << std::chrono::duration_cast<std::chrono::milliseconds>(sdv_span).count()
               << " miliseconds\n";
     std::cout << "---------------------------------------------------------" << std::endl;
 
