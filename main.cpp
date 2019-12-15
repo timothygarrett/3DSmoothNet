@@ -26,9 +26,11 @@ int main(int argc, char *argv[])
     float smoothing_kernel_width;
     std::string interest_points_file;
     std::string output_folder;
+    std::string output_file;
 
     // Get command line arguments
-    bool result = processCommandLine(argc, argv, data_file, radius, num_voxels, smoothing_kernel_width, interest_points_file, output_folder);
+    bool result = processCommandLine(argc, argv, data_file, radius, num_voxels, smoothing_kernel_width, interest_points_file, 
+                                     output_folder, output_file);
     if (!result)
         return 1;
 
@@ -140,25 +142,30 @@ int main(int argc, char *argv[])
     }
 
     // Compute the SDV representation for all the points
+    std::string save_dir;
+    if (output_file.compare("") == 0) {
+        std::size_t found = data_file.find_last_of("/");
+        std::string temp_token = data_file.substr(found + 1);
+        std::size_t found2 = data_file.find_last_of(".");
 
-    std::size_t found = data_file.find_last_of("/");
-    std::string temp_token = data_file.substr(found + 1);
-    std::size_t found2 = data_file.find_last_of(".");
-
-    std::string save_file_name = temp_token.substr(0, found2);
-    save_file_name = output_folder + save_file_name;
+        std::string save_file = temp_token.substr(0, found2);
+        save_dir = output_folder + save_file;
+    }
+    else {
+        save_dir = output_folder;
+    }
 
     // Start the actuall computation
     std::__success_type<std::chrono::nanoseconds>::type sdv_span;
     if (has_pc_interest_points) {
         auto t1 = std::chrono::high_resolution_clock::now();
-        computeLocalDepthFeature(cloud, interest_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_file_name);
+        computeLocalDepthFeature(cloud, interest_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_dir, output_file);
         auto t2 = std::chrono::high_resolution_clock::now();
         sdv_span = t2 - t1;
     }
     else {
         auto t1 = std::chrono::high_resolution_clock::now();
-        computeLocalDepthFeature(cloud, evaluation_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_file_name);
+        computeLocalDepthFeature(cloud, evaluation_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_dir, output_file);
         auto t2 = std::chrono::high_resolution_clock::now();
         sdv_span = t2 - t1;
     }

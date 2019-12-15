@@ -32,7 +32,8 @@ bool processCommandLine(int argc, char** argv,
 	int &num_voxels,
 	float &smoothing_kernel_width,
 	std::string &file_keypoints,
-	std::string &output_folder)
+	std::string &output_folder,
+    std::string &output_file)
 {
 	try
 	{
@@ -50,6 +51,8 @@ bool processCommandLine(int argc, char** argv,
 				"Path to the file with the indices of the interest points. If 0, SDV voxel grid representation if computed for all the points")
 			("outputFolder,o", po::value<std::string>(&output_folder)->default_value("./data/sdv_voxel_grid/"),
 				"Output folder path.")
+            ("outputFile,m", po::value<std::string>(&output_file)->default_value(""),
+                "Output file name.")
 			;
 
 		po::variables_map vm;
@@ -472,6 +475,7 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
                               flann::Matrix<float> voxel_coordinates,
                               int num_voxels,
                               float smoothing_factor,
+                              std::string saveDir,
                               std::string saveFileName)
 {
     // Iterrate over all the points for which the descriptor is to be computed
@@ -619,8 +623,13 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
         }
     }
 
-    // Create the name with the radius, number of voxels and the smoothing factor
-    saving_path_file = saveFileName + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
+    if (saveFileName.compare("") == 0) {
+        // Create the name with the radius, number of voxels and the smoothing factor
+        saving_path_file = saveDir + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
+    }
+    else {
+        saving_path_file = saveDir + saveFileName;
+    }
 
 
     // Write descriptor to CSV file
@@ -637,6 +646,7 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
                               flann::Matrix<float> voxel_coordinates,
                               int num_voxels,
                               float smoothing_factor,
+                              std::string saveDir,
                               std::string saveFileName)
 {
     // Iterrate over all the points for which the descriptor is to be computed
@@ -788,9 +798,13 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
         }
     }
 
-    // Create the name with the radius, number of voxels and the smoothing factor
-    saving_path_file = saveFileName + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
-
+    if (saveFileName.compare("") == 0) {
+        // Create the name with the radius, number of voxels and the smoothing factor
+        saving_path_file = saveDir + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
+    }
+    else {
+        saving_path_file = saveDir + saveFileName;
+    }
 
     // Write descriptor to CSV file
     saveVector(saving_path_file, DIMATCH_Descriptor);

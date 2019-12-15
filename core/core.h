@@ -32,7 +32,8 @@ typedef pcl::PointNormal PointNormalT;
 typedef pcl::PointCloud<PointNormalT> PointCloudWithNormals;
 
 //	Utility functions
-bool processCommandLine(int argc, char** argv, std::string &file_cloud, float &support_radius, int &num_voxels, float &smoothing_kernel_width, std::string &file_keypoints, std::string &output_folder);
+bool processCommandLine(int argc, char** argv, std::string &file_cloud, float &support_radius, int &num_voxels, float &smoothing_kernel_width, 
+                        std::string &file_keypoints, std::string &output_folder, std::string &output_file);
 std::vector<int> readKeypoints(std::string filename);
 bool fileExist(const std::string& name);
 void saveVector(std::string filename, const std::vector<std::vector<float>> descriptor);
@@ -51,8 +52,8 @@ void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<
 
 //	SDV computation
 void transformCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,LRF pointLRF,pcl::PointCloud<pcl::PointXYZ>::Ptr &transformed_cloud);
-void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<int> indices, std::vector<std::vector<int>> indices_neighbors, std::vector<LRF> cloud_LRF, float sup_radius, flann::Matrix<float> voxel_coordinates, int num_voxels, float smoothingFactor, std::string saveFileName);
-void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints, std::vector<std::vector<int>> indices_neighbors, std::vector<LRF> cloud_LRF, float sup_radius, flann::Matrix<float> voxel_coordinates, int num_voxels, float smoothingFactor, std::string saveFileName);
+void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<int> indices, std::vector<std::vector<int>> indices_neighbors, std::vector<LRF> cloud_LRF, float sup_radius, flann::Matrix<float> voxel_coordinates, int num_voxels, float smoothingFactor, std::string saveDir, std::string saveFileName);
+void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints, std::vector<std::vector<int>> indices_neighbors, std::vector<LRF> cloud_LRF, float sup_radius, flann::Matrix<float> voxel_coordinates, int num_voxels, float smoothingFactor, std::string saveDir, std::string saveFileName);
 
 
 #endif
