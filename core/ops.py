@@ -78,7 +78,7 @@ def compute_accuracy(embeddedRefFeatures, embeddedValFeatures):
     referenceNeighbors = np.reshape(np.arange(numberOfTestPoints), newshape=(-1, 1))
 
     wrongMatches = np.count_nonzero(indNeighNormal - referenceNeighbors)
-    accuracy = (1 - wrongMatches / numberOfTestPoints) * 100
+    accuracy = (1 - float(wrongMatches) / float(numberOfTestPoints)) * 100
     return accuracy
 
 
