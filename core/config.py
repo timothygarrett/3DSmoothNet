@@ -80,7 +80,7 @@ train_arg.add_argument('--decay_step', type=int, default=5000,
                        help='the frequency of exponential learning rate decaying')
 train_arg.add_argument('--shuffle_size_TFRecords', type=int, default=5000,
                        help='the shuffle buffer size of the TFRecords')
-train_arg.add_argument('--training_data_folder', type=str, default="./data/train/trainingData3DMatch",
+train_arg.add_argument('--training_data_folder', type=str, default="./data/train/trainingData3DMatch/",
                        help='location of the training data files')
 train_arg.add_argument('--pretrained_model', type=str, default="./models/32_dim/3DSmoothNet_32_dim.ckpt",
                        help='pretrained model which will be used if resume is activared')
