@@ -30,7 +30,7 @@ def weight(shape, layer_name, weight_initializer=None,reuse=False):
     return weights
 
 
-def bias(shape, layer_name,reuse=False):
+def bias(shape, layer_name, reuse=False):
     bias_init = tf.constant_initializer(0.01)
 
     with tf.name_scope(layer_name):
@@ -40,8 +40,30 @@ def bias(shape, layer_name,reuse=False):
     return biases
 
 
-def conv3d(x,filtertype , stride, padding):
+def conv3d(x, filtertype , stride, padding):
     return tf.nn.conv3d(x, filter=filtertype, strides=[1, stride[0], stride[1], stride[2], 1], padding=padding)
+
+
+def conv3d_transpose(x, filter, stride, padding):
+    assert padding in {'SAME', 'VALID'}
+
+    upscale_factor = 8
+    in_shape = tf.shape(x)
+    filter_shape = tf.shape(filter)
+
+    if padding == 'SAME':
+        d = in_shape[1] * upscale_factor
+        h = in_shape[2] * upscale_factor
+        w = in_shape[3] * upscale_factor
+    else:
+        d = ((in_shape[1] - 1) * upscale_factor) + 1
+        h = ((in_shape[2] - 1) * upscale_factor) + 1
+        w = ((in_shape[3] - 1) * upscale_factor) + 1
+
+    output_shape = tf.stack([in_shape[0], d, h, w, filter_shape[-2]])
+
+    return tf.nn.conv3d_transpose(x, filter=filter, output_shape=output_shape,
+                                  strides=[1, stride[0], stride[1], stride[2], 1], padding=padding)
 
 
 def max_pool3d(x, kernel, stride, padding):
