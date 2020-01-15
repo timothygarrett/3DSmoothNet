@@ -196,14 +196,15 @@ def contracting_block(input_anc, input_pos, channels, dimensions, dropout_flag, 
 
 
 def conv_transpose_block(input_anc, input_pos, channels, upscale_factor, dropout_flag, dropout_rate, layer_idx,
-                         stride_input=1, k_size=3, padding_type='SAME', reuse=False):
+                         stride_input=1, k_size=5, padding_type='VALID', reuse=False):
 
     i_size = input_anc.get_shape().as_list()[-2]/stride_input
     assert padding_type in {'SAME', 'VALID'}
-    if padding_type == 'SAME':
-        up_size = i_size * upscale_factor
-    else:
-        up_size = ((i_size - 1) * upscale_factor) + 1
+    # if padding_type == 'SAME':
+    #     up_size = i_size * upscale_factor
+    # else:
+    #     up_size = ((i_size - 1) * upscale_factor) + 1
+    up_size = i_size * upscale_factor
 
     weights = ops.weight([k_size, k_size, k_size, channels[0], channels[1]],
                          layer_name='wcnn_transpose' + str(layer_idx+1), reuse=reuse)
@@ -212,9 +213,9 @@ def conv_transpose_block(input_anc, input_pos, channels, upscale_factor, dropout
                     reuse=reuse)
 
     conv_output_anc = tf.add(ops.conv3d_transpose(input_anc, weights, stride=[stride_input, stride_input, stride_input],
-                                                  padding=padding_type), bias)
+                                                  upscale_factor=upscale_factor, padding=padding_type), bias)
     conv_output_pos = tf.add(ops.conv3d_transpose(input_pos, weights, stride=[stride_input, stride_input, stride_input],
-                                                  padding=padding_type), bias)
+                                                  upscale_factor=upscale_factor, padding=padding_type), bias)
 
     conv_output_anc = ops.relu(conv_output_anc)
     conv_output_pos = ops.relu(conv_output_pos)
@@ -263,7 +264,6 @@ def encode_block(input_anc, input_pos, output_channels, layer_index, reuse=False
     input_channels = input_anc.get_shape().as_list()[-1]
 
     with tf.name_scope('conv_{}'.format(layer_index)) as scope:
-        print('encoding_{}: {}'.format(layer_index, 'SAME'))
         input_anc, input_pos = out_block(input_anc, input_pos, [input_channels, output_channels],
                                          conv_layer_idx, reuse=reuse)
 
@@ -271,6 +271,7 @@ def encode_block(input_anc, input_pos, output_channels, layer_index, reuse=False
 
 
 def out_block(input_anc, input_pos, channels, layer_idx, stride_input=1, k_size=8, padding_type='VALID', reuse=False):
+    print('out_block_{}: {}'.format(layer_idx, padding_type))
 
     # Last conv layer, flatten the output
     weights = ops.weight([k_size, k_size, k_size, channels[0], channels[1]],
