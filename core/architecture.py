@@ -25,8 +25,8 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
 
     # Join the 3DSmoothNet structure with the desired output dimension
     # net_structure = [1, 32, 32, 64, 64, 128, 128]
-    # net_structure = [1, 128, 256, 512]
-    net_structure = [1, 32, 64, 128]
+    net_structure = [1, 128, 256, 512]
+    # net_structure = [1, 8, 16, 32]
     outputDim = config.output_dim
     channels = [item for sublist in [net_structure, [outputDim]] for item in sublist]
 
@@ -54,19 +54,20 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
     input_anc_4 = x_anc
     input_pos_4 = x_pos
 
-    contracting_blocks = {}
-    expanding_blocks = []
+    # shortcut_blocks = {}
     with tf.name_scope('3DIM_cnn') as scope:
 
         # Build contracting blocks
         for layer in range(len(net_structure) - 1):
+            dropout_flag = 0 if layer < len(net_structure) - 2 else 1
+
             # Build 16-sided contracting blocks
             input_anc_16, input_pos_16 = contracting_block(input_anc_16,
                                                            input_pos_16,
                                                            [channels[layer], channels[layer + 1]],
                                                            16,
-                                                           0,
-                                                           0.0,
+                                                           dropout_flag,
+                                                           dropout_rate,
                                                            layer_index + layer,
                                                            max_pool_flag[layer],
                                                            max_pool_filter_stride[16],
@@ -78,8 +79,8 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
                                                          input_pos_8,
                                                          [channels[layer], channels[layer + 1]],
                                                          8,
-                                                         0,
-                                                         0.0,
+                                                         dropout_flag,
+                                                         dropout_rate,
                                                          layer_index + layer,
                                                          max_pool_flag[layer],
                                                          max_pool_filter_stride[8],
@@ -91,13 +92,19 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
                                                          input_pos_4,
                                                          [channels[layer], channels[layer + 1]],
                                                          4,
-                                                         0,
-                                                         0.0,
+                                                         dropout_flag,
+                                                         dropout_rate,
                                                          layer_index + layer,
                                                          max_pool_flag[layer],
                                                          max_pool_filter_stride[4],
                                                          stride_input=1,
                                                          reuse=reuse)
+
+            # if layer == 0:
+            #     shortcut_blocks[16] = (input_anc_16, input_pos_16)
+            #     shortcut_blocks[8] = (input_anc_8, input_pos_8)
+            #     shortcut_blocks[4] = (input_anc_4, input_pos_4)
+
         layer_index += (len(net_structure) - 1)
 
         # Downsample the 16-sided volumes
@@ -109,10 +116,23 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
                                                         reuse=reuse)
         layer_index += 1
 
+        # Add the shortcuts
+        # sh_anc_16, sh_pos_16 = shortcut_blocks[16]
+        # sh_anc_16, sh_pos_16 = max_pool(sh_anc_16, sh_pos_16, 2, 2)
+        # sh_anc_8, sh_pos_8 = shortcut_blocks[8]
+        # sh_anc_4, sh_pos_4 = shortcut_blocks[4]
+        # sh_anc_4, sh_pos_4 = conv_transpose_block(sh_anc_4, sh_pos_4,
+        #                                           [net_structure[1], net_structure[1]], 2, 0, 0.0, layer_index,
+        #                                           reuse=reuse)
+        # layer_index += 1
+        input_ancs = [input_anc_16, input_anc_8, input_anc_4]
+        # shortcut_ancs = [sh_anc_16, sh_anc_8, sh_anc_4, input_anc_16, input_anc_8, input_anc_4]
+        input_poses = [input_pos_16, input_pos_8, input_pos_4]
+        # shortcut_poses = [sh_pos_16, sh_pos_8, sh_pos_4, input_pos_16, input_pos_8, input_pos_4]
+
         # Concatenate
-        input_anc, input_pos = concatenate([input_anc_16, input_anc_8, input_anc_4],
-                                           [input_pos_16, input_pos_8, input_pos_4],
-                                           layer_index)
+        input_anc, input_pos = concatenate(input_ancs, input_poses, layer_index)
+        # input_anc, input_pos = concatenate(shortcut_ancs, shortcut_poses, layer_index)
         layer_index += 1
 
         # Encode into a descriptor
@@ -142,6 +162,7 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
 
 
 def concatenate(input_ancs, input_poses, layer_idx):
+    # assert len(input_ancs) == 6 and len(input_poses) == 6
     assert len(input_ancs) == 3 and len(input_poses) == 3
 
     with tf.name_scope('concat_{}'.format(layer_idx)) as scope:
@@ -217,11 +238,11 @@ def conv_transpose_block(input_anc, input_pos, channels, upscale_factor, dropout
     conv_output_pos = tf.add(ops.conv3d_transpose(input_pos, weights, stride=[stride_input, stride_input, stride_input],
                                                   upscale_factor=upscale_factor, padding=padding_type), bias)
 
-    conv_output_anc = ops.relu(conv_output_anc)
-    conv_output_pos = ops.relu(conv_output_pos)
-
     conv_output_anc = ops.batch_norm(conv_output_anc)
     conv_output_pos = ops.batch_norm(conv_output_pos)
+
+    conv_output_anc = ops.relu(conv_output_anc)
+    conv_output_pos = ops.relu(conv_output_pos)
 
     if dropout_flag:
         conv_output_anc = ops.dropout(conv_output_anc, dropout_rate=dropout_rate)
@@ -245,12 +266,11 @@ def conv_block(input_anc, input_pos, channels, dimensions, dropout_flag, dropout
     conv_output_anc = tf.add(ops.conv3d(input_anc, weights, stride=[stride_input,stride_input, stride_input], padding=padding_type),bias)
     conv_output_pos = tf.add(ops.conv3d(input_pos, weights, stride=[stride_input, stride_input, stride_input], padding=padding_type),bias)
 
-    conv_output_anc = ops.relu(conv_output_anc)
-    conv_output_pos = ops.relu(conv_output_pos)
-
     conv_output_anc = ops.batch_norm(conv_output_anc)
     conv_output_pos = ops.batch_norm(conv_output_pos)
 
+    conv_output_anc = ops.relu(conv_output_anc)
+    conv_output_pos = ops.relu(conv_output_pos)
 
     if dropout_flag:
         conv_output_anc = ops.dropout(conv_output_anc, dropout_rate=dropout_rate)
