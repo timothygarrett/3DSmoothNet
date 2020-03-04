@@ -37,6 +37,10 @@ if( PCL_FOUND )
   target_link_libraries(3DSmoothNet ${PCL_LIBRARIES} )
 endif()
 
+find_package(HDF5 COMPONENTS CXX)
+include_directories(${HDF5_INCLUDE_DIRS})
+target_link_libraries(3DSmoothNet ${HDF5_LIBRARIES})
+
 FIND_PACKAGE(Boost COMPONENTS program_options REQUIRED)
 INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
 TARGET_LINK_LIBRARIES( 3DSmoothNet ${Boost_LIBRARIES} )

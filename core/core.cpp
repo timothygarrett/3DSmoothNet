@@ -5,16 +5,30 @@ core.cpp
 Purpose: containes all the functions used to generate the  Smoothed Density Value voxel representation
 of the interest points neighborhood
 
-@Author : Zan Gojcic, Caifa Zhou
-@Version : 1.0
+@Author : Zan Gojcic, Caifa Zhou, Tim Garrett
+@Version : 2.0
 
 */
 
+#include <string>
+#include <sstream>
+
+
+// Boost
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
+
+// HDF5
+#include <H5Cpp.h>
+
+// PCL
 #include <pcl/common/centroid.h>
 #include <pcl/filters/extract_indices.h>
+
+// OpenMP
 #include <omp.h>
+
+// Local
 #include "core.h"
 
 
@@ -33,7 +47,8 @@ bool processCommandLine(int argc, char** argv,
 	float &smoothing_kernel_width,
 	std::string &file_keypoints,
 	std::string &output_folder,
-    std::string &output_file)
+    std::string &output_file,
+    int &chunk_size)
 {
 	try
 	{
@@ -53,6 +68,8 @@ bool processCommandLine(int argc, char** argv,
 				"Output folder path.")
             ("outputFile,m", po::value<std::string>(&output_file)->default_value(""),
                 "Output file name.")
+            ("chunkSize,c", po::value<int>(&chunk_size)->default_value(0),
+                "When splitting the descriptors to multiple files, the number of descriptors per file.")
 			;
 
 		po::variables_map vm;
@@ -108,26 +125,129 @@ bool fileExist(const std::string& name)
 }
 
 // Saves the descriptor to a binary csv file
-void saveVector(std::string filename, const std::vector<std::vector<float>> descriptor)
+void saveVector(std::string filename, const std::vector<std::vector<float>>& descriptor, int chunk_size)
 {
-    std::cout << "Saving Features to a CSV file:" << std::endl;
-    std::cout << filename << std::endl;
-
-    std::ofstream outFile;
-    outFile.open(filename, std::ios::binary);
-
-    float writerTemp;
-    for (int i = 0; i < descriptor.size(); i++)
-    {
-        for (int j = 0; j < descriptor[i].size(); j++)
-        {
-            writerTemp = descriptor[i][j];
-            outFile.write(reinterpret_cast<const char*>(&writerTemp), sizeof(float));
-        }
+    std::string shortExt = filename.substr(filename.length() - 3, 3);
+    std::string longExt = filename.substr(filename.length() - 4, 4);
+    std::string veryLongExt = filename.substr(filename.length() - 8, 8);
+    if (veryLongExt.compare(".bin.csv") == 0 || veryLongExt.compare(".BIN.CSV") == 0) {  // Save as binary
+        std::cout << "Saving features to binary file " << filename << std::endl;
+        saveVectorCSV(filename, descriptor, true, chunk_size);
     }
-    outFile.close();
+    else if (longExt.compare(".csv")==0 || longExt.compare(".CSV")==0) {
+        std::cout << "Saving features to ASCII file " << filename << std::endl;
+        saveVectorCSV(filename, descriptor, false, chunk_size);
+    }
+    else if (shortExt.compare(".h5") == 0) {
+        std::cout << "Saving features to h5 file " << filename << std::endl;
+        saveVectorHDF5(filename, descriptor);
+    }
+
 }
 
+void saveVectorCSV(std::string filename, const std::vector<std::vector<float>>& descriptor, bool binary, int chunk_size)
+{
+    std::ofstream outFile;
+    std::ios_base::openmode mode = (binary ? std::ios::binary : std::ios::out | std::ios::trunc);
+
+    // Saving as one file
+    bool oneFile = (chunk_size <= 0);
+
+    // Open if saving as one file
+    if (oneFile) {
+        outFile.open(filename, mode);
+        chunk_size = 1;
+    }
+
+    // Compute the number of files to write
+    float writerTemp;
+    int numChunks = (oneFile ? static_cast<int>(descriptor.size()) :
+                        static_cast<int>(ceil(static_cast<double>(descriptor.size())/chunk_size)));
+
+    // For each chunk
+    for (int c = 0; c < numChunks; c++) {
+        // Create a new file for each chunk
+        if (!oneFile) {
+            std::stringstream s;
+            s << filename.substr(0, filename.length() - 3) << std::setfill('0') << std::setw(4) << c << ".csv";
+            std::cout << "Saving file " << s.str() << std::endl;
+            outFile.open(s.str(), mode);
+        }
+
+        for (int i = 0; i < chunk_size; i++) {
+            int idx = c * chunk_size + i;
+
+            // Exit if we've reached the end of the data
+            if (idx >= descriptor.size()) break;
+
+            for (int j = 0; j < descriptor[idx].size(); j++)
+            {
+                writerTemp = descriptor[idx][j];
+                outFile.write(reinterpret_cast<const char*>(&writerTemp), sizeof(float));
+
+                // Add spacing for the ASCII output
+                if (!binary)
+                    outFile << writerTemp << " ";
+            }
+
+            // Make the ASCII output pretty
+            if (!binary)
+                outFile << std::endl;
+        }
+
+        // Close the chunk file
+        if (!oneFile)
+            outFile.close();
+    }
+
+    // Close if one file
+    if (oneFile)
+        outFile.close();
+}
+
+void saveVectorHDF5(std::string filename, const std::vector<std::vector<float>>& descriptor)
+{
+    // Create contiguous memory, point by point to avoid crashes
+    int desWidth = descriptor[0].size();
+    float* pDes = new float[desWidth];
+
+    // Save as an hdf5 file
+    const H5std_string fName(filename);
+    H5::H5File oFile(fName, H5F_ACC_TRUNC);
+
+    // Data dimensions and type
+    hsize_t desDims[] = {1, static_cast<hsize_t>(desWidth)};
+    H5::DataSpace dataspace(2, desDims);
+
+    H5::FloatType datatype(H5::PredType::NATIVE_FLOAT);
+    datatype.setOrder(H5T_ORDER_LE);
+
+    hsize_t chunkDims[] = {1, 512};
+    H5::DSetCreatPropList dsCreatePropList;
+    dsCreatePropList.setChunk(2, chunkDims);
+    dsCreatePropList.setDeflate(6);
+
+    // Create a dataset for each descriptor
+    for (size_t i = 0; i < 100 /*descriptor.size()*/; i++) {
+        // Copy data
+        for (size_t j = 0; j < descriptor[i].size(); j++) {
+            pDes[j] = descriptor[i][j];
+        }
+
+        // Set the name
+        std::stringstream s;
+        s << i;
+        const H5std_string dsetName(s.str());
+
+        // Create the dataset
+        H5::DataSet dataset = oFile.createDataSet(dsetName, datatype, dataspace, dsCreatePropList);
+
+        // Transfer data to a buffer
+        dataset.write(pDes, H5::PredType::NATIVE_FLOAT);
+    }
+
+    delete[] pDes;
+}
 
 // Initizales a grid using the step size and the number of voxels per side
 flann::Matrix<float> initializeGridMatrix(const int n, float x_step, float y_step, float z_step)
@@ -163,7 +283,7 @@ flann::Matrix<float> initializeGridMatrix(const int n, float x_step, float y_ste
 */
 
 // Estimates the Z axis of the local reference frame
-void toldiComputeZaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, Vertex &z_axis, std::vector<float> point_dst)
+void toldiComputeZaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, Vertex &z_axis, std::vector<float>& point_dst)
 {
     int i;
     pcl::PointXYZ query_point = cloud->points[0];
@@ -207,7 +327,7 @@ void toldiComputeZaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, Vertex &z_axis
 }
 
 // Estimates the X axis of the local reference frame
-void toldiComputeXaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, Vertex z_axis, float sup_radius, std::vector<float> point_dst, Vertex &x_axis)
+void toldiComputeXaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, Vertex& z_axis, float sup_radius, std::vector<float>& point_dst, Vertex &x_axis)
 {
     int i, j;
     pcl::PointXYZ query_point = cloud->points[0];
@@ -252,7 +372,7 @@ void toldiComputeXaxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, Vertex z_axis,
 }
 
 // Estimates the Y axis of the local reference frame
-void toldiComputeYaxis(Vertex x_axis, Vertex z_axis, Vertex &y_axis)
+void toldiComputeYaxis(Vertex& x_axis, Vertex& z_axis, Vertex &y_axis)
 {
     Eigen::Vector3f x(x_axis.x, x_axis.y, x_axis.z);
     Eigen::Vector3f z(z_axis.x, z_axis.y, z_axis.z);
@@ -266,8 +386,8 @@ void toldiComputeYaxis(Vertex x_axis, Vertex z_axis, Vertex &y_axis)
 }
 
 // Compute the lrf accordin to the method from toldi paper, for the points selected with the indices
-void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
-                     std::vector<int> indices,
+void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                     std::vector<int>& indices,
                      float sup_radius,
                      float smoothingFactor,
                      std::vector<LRF> &cloud_LRF,
@@ -342,8 +462,8 @@ void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 }
 
 // Compute the lrf accordin to the method from toldi paper, for the points selected with the indices
-void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
-                     pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints,
+void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                     pcl::PointCloud<pcl::PointXYZ>::Ptr& keypoints,
                      float sup_radius,
                      float smoothingFactor,
                      std::vector<LRF> &cloud_LRF,
@@ -430,7 +550,7 @@ void toldiComputeLRF(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 */
 
 // transform the local neighbhorhood of the selecred interest point to its canonical representation defined by the estimated local reference frame
-void transformCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, LRF pointLRF, pcl::PointCloud<pcl::PointXYZ>::Ptr &transformed_cloud)
+void transformCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, LRF& pointLRF, pcl::PointCloud<pcl::PointXYZ>::Ptr &transformed_cloud)
 {
     pcl::PointXYZ point = cloud->points[0]; //the centroid of the local surface
     int number_of_points = cloud->points.size() - 1; // remove the first point which is centroid
@@ -467,16 +587,17 @@ void transformCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, LRF pointLRF, pcl
 
 
 // estimate the SDV voxel grid for all interes points
-void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
-                              std::vector<int> evaluation_points,
-                              std::vector<std::vector<int>> indices_neighbors,
-                              std::vector<LRF> cloud_LRF,
+void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                              std::vector<int>& evaluation_points,
+                              std::vector<std::vector<int>>& indices_neighbors,
+                              std::vector<LRF>& cloud_LRF,
                               float sup_radius,
-                              flann::Matrix<float> voxel_coordinates,
+                              flann::Matrix<float>& voxel_coordinates,
                               int num_voxels,
                               float smoothing_factor,
                               std::string saveDir,
-                              std::string saveFileName)
+                              std::string saveFileName,
+                              int chunk_size)
 {
     // Iterrate over all the points for which the descriptor is to be computed
     pcl::PointXYZ queryPoint;
@@ -625,29 +746,29 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 
     if (saveFileName.compare("") == 0) {
         // Create the name with the radius, number of voxels and the smoothing factor
-        saving_path_file = saveDir + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
+        saving_path_file = saveDir + "/cloud_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
     }
     else {
-        saving_path_file = saveDir + saveFileName;
+        saving_path_file = saveDir + "/" + saveFileName;
     }
 
 
     // Write descriptor to CSV file
-    saveVector(saving_path_file, DIMATCH_Descriptor);
+    saveVector(saving_path_file, DIMATCH_Descriptor, chunk_size); 
 }
 
 // estimate the SDV voxel grid for all interes points
-void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
-                              pcl::PointCloud<pcl::PointXYZ>::Ptr keypoints,
-                            //   std::vector<int> evaluation_points,
-                              std::vector<std::vector<int>> indices_neighbors,
-                              std::vector<LRF> cloud_LRF,
+void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                              pcl::PointCloud<pcl::PointXYZ>::Ptr& keypoints,
+                              std::vector<std::vector<int>>& indices_neighbors,
+                              std::vector<LRF>& cloud_LRF,
                               float sup_radius,
-                              flann::Matrix<float> voxel_coordinates,
+                              flann::Matrix<float>& voxel_coordinates,
                               int num_voxels,
                               float smoothing_factor,
                               std::string saveDir,
-                              std::string saveFileName)
+                              std::string saveFileName,
+                              int chunk_size)
 {
     // Iterrate over all the points for which the descriptor is to be computed
     pcl::PointXYZ queryPoint;
@@ -800,12 +921,12 @@ void computeLocalDepthFeature(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 
     if (saveFileName.compare("") == 0) {
         // Create the name with the radius, number of voxels and the smoothing factor
-        saving_path_file = saveDir + "_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
+        saving_path_file = saveDir + "/cloud_" + std::to_string(sup_radius) + "_" + std::to_string(num_voxels) + "_" + std::to_string(smoothing_factor * num_voxels / sup_radius) + ".csv";
     }
     else {
-        saving_path_file = saveDir + saveFileName;
+        saving_path_file = saveDir + "/" + saveFileName;
     }
 
     // Write descriptor to CSV file
-    saveVector(saving_path_file, DIMATCH_Descriptor);
+    saveVector(saving_path_file, DIMATCH_Descriptor, chunk_size);
 }

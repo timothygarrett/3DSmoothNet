@@ -8,11 +8,18 @@ Purpose: executes the computation of the SDV voxel grid for the selected interes
 @Version : 1.0
 */
 
+// STL
 #include <chrono>
+#include <string>
+#include <vector>
+
+// PCL
 #include <pcl/io/ply_io.h>
 #include <pcl/io/pcd_io.h>
-#include "core/core.h"
 
+// Local
+#include "core/core.h"
+#include <sstream>
 
 int main(int argc, char *argv[])
 {
@@ -27,10 +34,11 @@ int main(int argc, char *argv[])
     std::string interest_points_file;
     std::string output_folder;
     std::string output_file;
+    int chunk_size;
 
     // Get command line arguments
     bool result = processCommandLine(argc, argv, data_file, radius, num_voxels, smoothing_kernel_width, interest_points_file, 
-                                     output_folder, output_file);
+                                     output_folder, output_file, chunk_size);
     if (!result)
         return 1;
 
@@ -49,7 +57,7 @@ int main(int argc, char *argv[])
         pcl::io::loadPLYFile(data_file, *cloud);
     else
     {
-        std::cout << "Point cloud file does not exsist or cannot be opened!!" << std::endl;
+        std::cout << "Point cloud file does not exist or cannot be opened!!" << std::endl;
         return 1;
     }
 
@@ -85,6 +93,7 @@ int main(int argc, char *argv[])
     if (!interest_points_file.compare(flag_all_points))
     {
         std::vector<int> ep_temp(cloud->width);
+        std::iota(ep_temp.begin(), ep_temp.end(), 0);
         std::iota(ep_temp.begin(), ep_temp.end(), 0);
         evaluation_points = ep_temp;
         ep_temp.clear();
@@ -155,17 +164,17 @@ int main(int argc, char *argv[])
         save_dir = output_folder;
     }
 
-    // Start the actuall computation
+    // Start the actual computation
     std::__success_type<std::chrono::nanoseconds>::type sdv_span;
     if (has_pc_interest_points) {
         auto t1 = std::chrono::high_resolution_clock::now();
-        computeLocalDepthFeature(cloud, interest_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_dir, output_file);
+        computeLocalDepthFeature(cloud, interest_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_dir, output_file, chunk_size);
         auto t2 = std::chrono::high_resolution_clock::now();
         sdv_span = t2 - t1;
     }
     else {
         auto t1 = std::chrono::high_resolution_clock::now();
-        computeLocalDepthFeature(cloud, evaluation_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_dir, output_file);
+        computeLocalDepthFeature(cloud, evaluation_points, nearest_neighbors, cloud_lrf, radius, voxel_coordinates, num_voxels, smoothing_factor, save_dir, output_file, chunk_size);
         auto t2 = std::chrono::high_resolution_clock::now();
         sdv_span = t2 - t1;
     }
