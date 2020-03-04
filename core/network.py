@@ -345,8 +345,8 @@ class NetworkBuilder(object):
             np.savez_compressed(self.config.evaluate_output_folder + '/{}_dim/'.format(self.config.output_dim) +
                                 evaluate_file_name[:-4] + '_3DSmoothNet.npz', data=all_predictions)
 
-            np.savetxt(self.config.evaluate_output_folder + '/{}_dim/'.format(self.config.output_dim) +
-                       evaluate_file_name[:-4] + '_3DSmoothNet.txt', all_predictions, delimiter=',', encoding=None)
+            # np.savetxt(self.config.evaluate_output_folder + '/{}_dim/'.format(self.config.output_dim) +
+            #            evaluate_file_name[:-4] + '_3DSmoothNet.txt', all_predictions, delimiter=',', encoding=None)
 
             print('Wrote file {0}'.format(evaluate_file_name[:-4] + '_3DSmoothNet.npz'))
 
