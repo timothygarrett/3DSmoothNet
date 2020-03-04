@@ -141,6 +141,8 @@ class NetworkBuilder(object):
                                                    staircase=True)
         tf.summary.scalar('learning_rate', learning_rate)
 
+        print('Starting learning rate = {}; decay step = {}'.format(starter_learning_rate, self.config.decay_step))
+
         # Merge all summary op
         self.summary_op = tf.summary.merge_all()
 

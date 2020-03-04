@@ -92,7 +92,7 @@ def l2_normalize(x):
 
 
 def dropout(x,dropout_rate=0.7):
-    return tf.nn.dropout(x,keep_prob=dropout_rate,noise_shape=None,seed=None,name=None)
+    return tf.nn.dropout(x, keep_prob=dropout_rate,noise_shape=None,seed=None,name=None)
 
 
 def compute_accuracy(embeddedRefFeatures, embeddedValFeatures):

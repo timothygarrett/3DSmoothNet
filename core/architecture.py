@@ -25,7 +25,8 @@ def network_architecture(x_anc,x_pos, dropout_rate, config, reuse=False):
 
     # Join the 3DSmoothNet structure with the desired output dimension
     # net_structure = [1, 32, 32, 64, 64, 128, 128]
-    net_structure = [1, 128, 256, 512]
+    # net_structure = [1, 128, 256, 512]
+    net_structure = [1, 32, 64, 128]
     # net_structure = [1, 8, 16, 32]
     outputDim = config.output_dim
     channels = [item for sublist in [net_structure, [outputDim]] for item in sublist]
@@ -181,7 +182,7 @@ def contracting_block(input_anc, input_pos, channels, dimensions, dropout_flag, 
 
     with tf.name_scope('contracting_{}_{}'.format(dimensions, layer_idx)) as scope:
         print('contracting_{}_{}: {}'.format(dimensions, layer_idx, padding_type))
-        conv_output_anc, conv_output_pos = conv_block(input_anc, input_pos, channels, dimensions, dropout_flag,
+        conv_output_anc, conv_output_pos = conv_block(input_anc, input_pos, channels, dimensions, 0,
                                                       dropout_rate, conv_layer_idx, stride_input=stride_input,
                                                       reuse=reuse)
 
