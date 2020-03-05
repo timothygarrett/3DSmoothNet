@@ -53,12 +53,18 @@ int main(int argc, char *argv[])
     std::cout << "Config parameters successfully read in!! \n" << std::endl;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    if (fileExist(data_file))
+    std::string ext = data_file.substr(data_file.length() - 4, 4);
+    if (!fileExist(data_file)) {
+        std::cerr << "Point cloud file does not exist or cannot be opened!!" << std::endl;
+        return -1;
+    }
+    else if (ext.compare(".pcd") == 0 || ext.compare(".PCD") == 0)
+        pcl::io::loadPCDFile(data_file, *cloud);
+    else if (ext.compare(".ply") == 0 || ext.compare(".PLY") == 0)
         pcl::io::loadPLYFile(data_file, *cloud);
-    else
-    {
-        std::cout << "Point cloud file does not exist or cannot be opened!!" << std::endl;
-        return 1;
+    else {
+        std::cerr << "Invalid point cloud file type" << std::endl;
+        return -1;
     }
 
     std::cout << "File: " << data_file << std::endl;
